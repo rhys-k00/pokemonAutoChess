@@ -26,6 +26,10 @@ const tournamentSchema = new Schema({
     type: Map,
     of: tournamentBracketSchema
   },
+  stage: { // New field to track the round number
+    type: Number,
+    default: 0
+  },
   finished: Boolean
 })
 
