@@ -1181,9 +1181,25 @@ export class NextTournamentStageCommand extends Command<
         // finals ended
         return [new EndTournamentCommand().setPayload({ tournamentId })]
       } else {
-        return [
-          new CreateTournamentLobbiesCommand().setPayload({ tournamentId })
-        ]
+        // Increment the stage
+        tournament.stage = (tournament.stage || 0) + 1; 
+
+        // Proceed to final after 3 rounds
+        if (tournament.stage > 3) {
+          // Keep top 8 players for finals
+          const top8Players = getTopRankedPlayers(remainingPlayers, 8);
+          top8Players.forEach((p) => (p.eliminated = false));
+          remainingPlayers
+            .filter((p) => !top8Players.includes(p))
+            .forEach((p) => (p.eliminated = true));
+
+          return [new CreateFinalLobbyCommand().setPayload({ tournamentId })]
+        } else {
+          // Proceed to the next stage (no elimination for first 3 rounds)
+          return [
+            new CreateTournamentLobbiesCommand().setPayload({ tournamentId })
+          ]
+        }
       }
     } catch (error) {
       logger.error(error)
@@ -1244,7 +1260,7 @@ export class CreateTournamentLobbiesCommand extends Command<
         })
       }
 
-      //save brackets to db
+      // Save brackets to db
       const mongoTournament = await Tournament.findById(tournamentId)
       if (mongoTournament) {
         mongoTournament.brackets = convertSchemaToRawObject(tournament.brackets)
@@ -1291,8 +1307,8 @@ export class EndTournamentMatchCommand extends Command<
         const player = tournament.players.get(p.id)
         if (player) {
           player.ranks.push(p.rank)
-          if (p.rank > 4) {
-            // eliminate players whose rank is > 4
+          if (tournament.stage > 3 && p.rank > 4) {
+            // eliminate players whose rank is > 4, but only after 3 rounds
             player.eliminated = true
           }
         }
@@ -1301,20 +1317,22 @@ export class EndTournamentMatchCommand extends Command<
       bracket.playersId.forEach((playerId) => {
         const player = tournament.players.get(playerId)
         if (player && players.every((p) => p.id !== playerId)) {
-          // eliminate players who did not attend their bracket
-          player.eliminated = true
+          // eliminate players who did not attend their bracket, but only after 3 rounds
+          if (tournament.stage > 3) {
+            player.eliminated = true
+          }
         }
       })
 
       if (values(tournament.brackets).every((b) => b.finished)) {
-        //save brackets and player ranks to db before moving to next stage
+        // Save brackets and player ranks to db before moving to next stage
         const mongoTournament = await Tournament.findById(tournamentId)
         if (mongoTournament) {
           mongoTournament.players = convertSchemaToRawObject(tournament.players)
           mongoTournament.brackets = convertSchemaToRawObject(
             tournament.brackets
           )
-          mongoTournament.save()
+          await mongoTournament.save()
         }
 
         return [new NextTournamentStageCommand().setPayload({ tournamentId })]
