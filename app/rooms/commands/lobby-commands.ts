@@ -1178,10 +1178,7 @@ export class NextTournamentStageCommand extends Command<
       const remainingPlayers = getRemainingPlayers(tournament);
 
       // Check if the tournament should end
-      if (
-        remainingPlayers.length <= 4 &&
-        remainingPlayers.some((p) => p.ranks.length > 0)
-      ) {
+      if (remainingPlayers.length <= 4 && remainingPlayers.some((p) => p.ranks.length > 0)) {
         // If finals ended, trigger the EndTournamentCommand
         return [new EndTournamentCommand().setPayload({ tournamentId })];
       } else {
@@ -1200,7 +1197,6 @@ export class NextTournamentStageCommand extends Command<
             .forEach((p) => (p.eliminated = true));
 
           // Proceed to the final round with top 8 players
-          // Assuming CreateTournamentLobbiesCommand will handle the final lobby setup
           return [new CreateTournamentLobbiesCommand().setPayload({ tournamentId })];
         } else {
           // Proceed to the next stage (no elimination for the first 3 rounds)
@@ -1240,33 +1236,34 @@ export class CreateTournamentLobbiesCommand extends Command<
   }) {
     try {
       if (client) {
-        const user = this.room.users.get(client.auth.uid)
+        const user = this.room.users.get(client.auth.uid);
         if (!user || !user.role || user.role !== Role.ADMIN) {
-          return
+          return;
         }
       }
 
-      logger.debug(`Creating tournament lobbies for tournament ${tournamentId}`)
+      logger.debug(`Creating tournament lobbies for tournament ${tournamentId}`);
       const tournament = this.state.tournaments.find(
         (t) => t.id === tournamentId
-      )
-      if (!tournament)
-        return logger.error(`Tournament not found: ${tournamentId}`)
+      );
+      if (!tournament) {
+        return logger.error(`Tournament not found: ${tournamentId}`);
+      }
 
       this.state.addAnnouncement(
-        `${tournament.name} ${getTournamentStage(tournament)} are starting !`
-      )
+        `${tournament.name} ${getTournamentStage(tournament)} are starting!`
+      );
 
-      const brackets = makeBrackets(tournament)
-      tournament.brackets.clear()
+      const brackets = makeBrackets(tournament);
+      tournament.brackets.clear();
 
       for (const bracket of brackets) {
-        const bracketId = nanoid()
-        logger.info(`Creating tournament game ${bracket.name} id: ${bracketId}`)
+        const bracketId = nanoid();
+        logger.info(`Creating tournament game ${bracket.name} id: ${bracketId}`);
         tournament.brackets.set(
           bracketId,
           new TournamentBracketSchema(bracket.name, bracket.playersId)
-        )
+        );
 
         await matchMaker.createRoom("preparation", {
           gameMode: GameMode.TOURNAMENT,
@@ -1277,17 +1274,17 @@ export class CreateTournamentLobbiesCommand extends Command<
           whitelist: bracket.playersId,
           tournamentId,
           bracketId
-        })
+        });
       }
 
       // Save brackets to db
-      const mongoTournament = await Tournament.findById(tournamentId)
+      const mongoTournament = await Tournament.findById(tournamentId);
       if (mongoTournament) {
-        mongoTournament.brackets = convertSchemaToRawObject(tournament.brackets)
-        await mongoTournament.save()
+        mongoTournament.brackets = convertSchemaToRawObject(tournament.brackets);
+        await mongoTournament.save();
       }
     } catch (error) {
-      logger.error(error)
+      logger.error(error);
     }
   }
 }
@@ -1295,70 +1292,90 @@ export class CreateTournamentLobbiesCommand extends Command<
 export class EndTournamentMatchCommand extends Command<
   CustomLobbyRoom,
   {
-    tournamentId: string
-    bracketId: string
-    players: { id: string; rank: number }[]
+    tournamentId: string;
+    bracketId: string;
+    players: { id: string; rank: number }[];
   }
 > {
   async execute({
     tournamentId,
     bracketId,
-    players
+    players,
   }: {
-    tournamentId: string
-    bracketId: string
-    players: IPlayer[]
+    tournamentId: string;
+    bracketId: string;
+    players: { id: string; rank: number }[];
   }) {
-    logger.debug(`Tournament ${tournamentId} bracket ${bracketId} has ended`)
+    logger.debug(`Tournament ${tournamentId} bracket ${bracketId} has ended`);
+    logger.debug(`Players being processed:`, players);
+
     try {
       const tournament = this.state.tournaments.find(
         (t) => t.id === tournamentId
-      )
-      if (!tournament)
-        return logger.error(`Tournament not found: ${tournamentId}`)
+      );
+      if (!tournament) {
+        logger.error(`Tournament not found: ${tournamentId}`);
+        return;
+      }
 
-      const bracket = tournament.brackets.get(bracketId)
-      if (!bracket)
-        return logger.error(`Tournament bracket not found: ${bracketId}`)
+      const bracket = tournament.brackets.get(bracketId);
+      if (!bracket) {
+        logger.error(`Tournament bracket not found: ${bracketId}`);
+        return;
+      }
 
-      bracket.finished = true
+      bracket.finished = true;
 
       players.forEach((p) => {
-        const player = tournament.players.get(p.id)
+        const player = tournament.players.get(p.id);
         if (player) {
-          player.ranks.push(p.rank)
-          if (tournament.stage > 3 && p.rank > 4) {
-            // eliminate players whose rank is > 4, but only after 3 rounds
-            player.eliminated = true
-          }
+          player.ranks.push(p.rank);
+          logger.debug(`Updated player ${p.id} with rank ${p.rank}`);
+        } else {
+          logger.warn(`Player not found in tournament: ${p.id}`);
         }
-      })
+      });
 
+      // Eliminate players who did not attend their bracket
       bracket.playersId.forEach((playerId) => {
-        const player = tournament.players.get(playerId)
+        const player = tournament.players.get(playerId);
         if (player && players.every((p) => p.id !== playerId)) {
-          // eliminate players who did not attend their bracket, but only after 3 rounds
-          if (tournament.stage > 3) {
-            player.eliminated = true
-          }
+          player.eliminated = true;
+          logger.debug(`Player ${playerId} has been eliminated for not attending.`);
         }
-      })
+      });
+
+      // After the third round, eliminate all but the top 8 players
+      if (tournament.stage > 3) {
+        const rankedPlayers = [...tournament.players.values()]
+          .filter((p) => !p.eliminated)
+          .sort((a, b) => a.ranks.slice(-1)[0] - b.ranks.slice(-1)[0]); // Sort by last rank
+
+        const topPlayers = rankedPlayers.slice(0, 8);
+        
+        rankedPlayers.forEach((player) => {
+          if (!topPlayers.includes(player)) {
+            player.eliminated = true; // Eliminate players not in top 8
+            logger.debug(`Player ${player.id} has been eliminated, not in top 8.`);
+          }
+        });
+      }
 
       if (values(tournament.brackets).every((b) => b.finished)) {
         // Save brackets and player ranks to db before moving to next stage
-        const mongoTournament = await Tournament.findById(tournamentId)
+        const mongoTournament = await Tournament.findById(tournamentId);
         if (mongoTournament) {
-          mongoTournament.players = convertSchemaToRawObject(tournament.players)
-          mongoTournament.brackets = convertSchemaToRawObject(
-            tournament.brackets
-          )
-          await mongoTournament.save()
+          mongoTournament.players = convertSchemaToRawObject(tournament.players);
+          mongoTournament.brackets = convertSchemaToRawObject(tournament.brackets);
+          await mongoTournament.save();
+
+          logger.debug(`Mongo tournament before saving:`, mongoTournament);
         }
 
-        return [new NextTournamentStageCommand().setPayload({ tournamentId })]
+        return [new NextTournamentStageCommand().setPayload({ tournamentId })];
       }
     } catch (error) {
-      logger.error(error)
+      logger.error(error);
     }
   }
 }
