@@ -1160,15 +1160,6 @@ export class ParticipateInTournamentCommand extends Command<
   }
 }
 
-import { Command } from 'some-command-library'; // Update with your actual import
-import { logger } from 'some-logger-library'; // Update with your actual import
-import { nanoid } from 'nanoid'; // Ensure you have this import if you use nanoid
-import { CustomLobbyRoom } from 'your-room-library'; // Replace with your actual room import
-import { Tournament, TournamentBracketSchema } from 'your-tournament-model'; // Update with your actual model
-import { GameMode, Role } from 'your-enums'; // Replace with your actual enums
-import { makeBrackets, getRemainingPlayers, getTournamentStage, convertSchemaToRawObject } from 'your-helpers'; // Update with your actual imports
-import { EndTournamentCommand } from './EndTournamentCommand'; // Update with your actual import
-
 export class NextTournamentStageCommand extends Command<
   CustomLobbyRoom,
   { tournamentId: string }
