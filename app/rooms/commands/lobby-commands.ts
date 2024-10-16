@@ -1166,44 +1166,58 @@ export class NextTournamentStageCommand extends Command<
 > {
   async execute({ tournamentId }: { tournamentId: string }) {
     try {
-      logger.debug(`Tournament ${tournamentId} is moving to next stage`)
+      logger.debug(`Tournament ${tournamentId} is moving to next stage`);
       const tournament = this.state.tournaments.find(
         (t) => t.id === tournamentId
-      )
-      if (!tournament)
-        return logger.error(`Tournament not found: ${tournamentId}`)
+      );
 
-      const remainingPlayers = getRemainingPlayers(tournament)
+      if (!tournament) {
+        return logger.error(`Tournament not found: ${tournamentId}`);
+      }
+
+      const remainingPlayers = getRemainingPlayers(tournament);
       if (
         remainingPlayers.length <= 4 &&
         remainingPlayers.some((p) => p.ranks.length > 0)
       ) {
-        // finals ended
-        return [new EndTournamentCommand().setPayload({ tournamentId })]
+        // Finals ended
+        return [new EndTournamentCommand().setPayload({ tournamentId })];
       } else {
         // Increment the stage
-        tournament.stage = (tournament.stage || 0) + 1; 
+        tournament.stage = (tournament.stage || 0) + 1;
 
         // Proceed to final after 3 rounds
         if (tournament.stage > 3) {
-          // Keep top 8 players for finals
-          const top8Players = getTopRankedPlayers(remainingPlayers, 8);
+          // Keep top 8 players for finals based on ranks
+          const top8Players = this.getTopRankedPlayers(remainingPlayers, 8);
           top8Players.forEach((p) => (p.eliminated = false));
           remainingPlayers
             .filter((p) => !top8Players.includes(p))
             .forEach((p) => (p.eliminated = true));
 
-          return [new CreateFinalLobbyCommand().setPayload({ tournamentId })]
+          return [new CreateFinalLobbyCommand().setPayload({ tournamentId })];
         } else {
-          // Proceed to the next stage (no elimination for first 3 rounds)
+          // Proceed to the next stage (no elimination for the first 3 rounds)
           return [
-            new CreateTournamentLobbiesCommand().setPayload({ tournamentId })
-          ]
+            new CreateTournamentLobbiesCommand().setPayload({ tournamentId }),
+          ];
         }
       }
     } catch (error) {
-      logger.error(error)
+      logger.error(error);
     }
+  }
+
+  private getTopRankedPlayers(remainingPlayers: TournamentPlayerSchema[], count: number) {
+    // Sort players based on their ranks and get the top 'count' players
+    return remainingPlayers
+      .filter(p => p.ranks.length > 0) // Ensure players have ranks
+      .sort((a, b) => {
+        const sumA = a.ranks.reduce((acc, rank) => acc + rank, 0);
+        const sumB = b.ranks.reduce((acc, rank) => acc + rank, 0);
+        return sumB - sumA; // Sort in descending order
+      })
+      .slice(0, count); // Get top 'count' players
   }
 }
 
