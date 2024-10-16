@@ -1319,6 +1319,7 @@ export class EndTournamentMatchCommand extends Command<
 
       bracket.finished = true;
 
+      // Update player ranks
       players.forEach((p) => {
         const player = tournament.players.get(p.id);
         if (player) {
