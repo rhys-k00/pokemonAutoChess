@@ -1176,26 +1176,32 @@ export class NextTournamentStageCommand extends Command<
       }
 
       const remainingPlayers = getRemainingPlayers(tournament);
+
+      // Check if the tournament should end
       if (
         remainingPlayers.length <= 4 &&
         remainingPlayers.some((p) => p.ranks.length > 0)
       ) {
-        // Finals ended
+        // If finals ended, trigger the EndTournamentCommand
         return [new EndTournamentCommand().setPayload({ tournamentId })];
       } else {
         // Increment the stage
         tournament.stage = (tournament.stage || 0) + 1;
 
-        // Proceed to final after 3 rounds
-        if (tournament.stage > 3) {
-          // Keep top 8 players for finals based on ranks
+        // Check if we are in the final round (after 3 rounds)
+        if (tournament.stage === 4) {
+          // Keep top 8 players for the finals based on ranks
           const top8Players = this.getTopRankedPlayers(remainingPlayers, 8);
+
+          // Mark players for the final round
           top8Players.forEach((p) => (p.eliminated = false));
           remainingPlayers
             .filter((p) => !top8Players.includes(p))
             .forEach((p) => (p.eliminated = true));
 
-          return [new CreateFinalLobbyCommand().setPayload({ tournamentId })];
+          // Proceed to the final round with top 8 players
+          // Assuming CreateTournamentLobbiesCommand will handle the final lobby setup
+          return [new CreateTournamentLobbiesCommand().setPayload({ tournamentId })];
         } else {
           // Proceed to the next stage (no elimination for the first 3 rounds)
           return [
