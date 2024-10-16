@@ -1178,7 +1178,10 @@ export class NextTournamentStageCommand extends Command<
       const remainingPlayers = getRemainingPlayers(tournament);
 
       // Check if the tournament should end
-      if (remainingPlayers.length <= 4 && remainingPlayers.some((p) => p.ranks.length > 0)) {
+      if (
+        remainingPlayers.length <= 4 &&
+        remainingPlayers.some((p) => p.ranks.length > 0)
+      ) {
         // If finals ended, trigger the EndTournamentCommand
         return [new EndTournamentCommand().setPayload({ tournamentId })];
       } else {
@@ -1292,36 +1295,32 @@ export class CreateTournamentLobbiesCommand extends Command<
 export class EndTournamentMatchCommand extends Command<
   CustomLobbyRoom,
   {
-    tournamentId: string;
-    bracketId: string;
-    players: { id: string; rank: number }[];
+    tournamentId: string
+    bracketId: string
+    players: { id: string; rank: number }[]
   }
 > {
   async execute({
     tournamentId,
     bracketId,
-    players,
+    players
   }: {
-    tournamentId: string;
-    bracketId: string;
-    players: { id: string; rank: number }[];
+    tournamentId: string
+    bracketId: string
+    players: IPlayer[]
   }) {
     logger.debug(`Tournament ${tournamentId} bracket ${bracketId} has ended`);
-    logger.debug(`Players being processed:`, players);
-
     try {
       const tournament = this.state.tournaments.find(
         (t) => t.id === tournamentId
       );
       if (!tournament) {
-        logger.error(`Tournament not found: ${tournamentId}`);
-        return;
+        return logger.error(`Tournament not found: ${tournamentId}`);
       }
 
       const bracket = tournament.brackets.get(bracketId);
       if (!bracket) {
-        logger.error(`Tournament bracket not found: ${bracketId}`);
-        return;
+        return logger.error(`Tournament bracket not found: ${bracketId}`);
       }
 
       bracket.finished = true;
@@ -1330,46 +1329,32 @@ export class EndTournamentMatchCommand extends Command<
         const player = tournament.players.get(p.id);
         if (player) {
           player.ranks.push(p.rank);
-          logger.debug(`Updated player ${p.id} with rank ${p.rank}`);
-        } else {
-          logger.warn(`Player not found in tournament: ${p.id}`);
+          if (tournament.stage > 3 && p.rank > 4) {
+            // eliminate players whose rank is > 4, but only after 3 rounds
+            player.eliminated = true;
+          }
         }
       });
 
-      // Eliminate players who did not attend their bracket
       bracket.playersId.forEach((playerId) => {
         const player = tournament.players.get(playerId);
         if (player && players.every((p) => p.id !== playerId)) {
-          player.eliminated = true;
-          logger.debug(`Player ${playerId} has been eliminated for not attending.`);
+          // eliminate players who did not attend their bracket, but only after 3 rounds
+          if (tournament.stage > 3) {
+            player.eliminated = true;
+          }
         }
       });
-
-      // After the third round, eliminate all but the top 8 players
-      if (tournament.stage > 3) {
-        const rankedPlayers = [...tournament.players.values()]
-          .filter((p) => !p.eliminated)
-          .sort((a, b) => a.ranks.slice(-1)[0] - b.ranks.slice(-1)[0]); // Sort by last rank
-
-        const topPlayers = rankedPlayers.slice(0, 8);
-        
-        rankedPlayers.forEach((player) => {
-          if (!topPlayers.includes(player)) {
-            player.eliminated = true; // Eliminate players not in top 8
-            logger.debug(`Player ${player.id} has been eliminated, not in top 8.`);
-          }
-        });
-      }
 
       if (values(tournament.brackets).every((b) => b.finished)) {
         // Save brackets and player ranks to db before moving to next stage
         const mongoTournament = await Tournament.findById(tournamentId);
         if (mongoTournament) {
           mongoTournament.players = convertSchemaToRawObject(tournament.players);
-          mongoTournament.brackets = convertSchemaToRawObject(tournament.brackets);
+          mongoTournament.brackets = convertSchemaToRawObject(
+            tournament.brackets
+          );
           await mongoTournament.save();
-
-          logger.debug(`Mongo tournament before saving:`, mongoTournament);
         }
 
         return [new NextTournamentStageCommand().setPayload({ tournamentId })];
@@ -1386,78 +1371,71 @@ export class EndTournamentCommand extends Command<
 > {
   async execute({ tournamentId }: { tournamentId: string }) {
     try {
-      logger.debug(`Tournament ${tournamentId} is finished`)
+      logger.debug(`Tournament ${tournamentId} is finished`);
       const tournament = this.state.tournaments.find(
         (t) => t.id === tournamentId
-      )
-      if (!tournament)
-        return logger.error(`Tournament not found: ${tournamentId}`)
+      );
+      if (!tournament) {
+        return logger.error(`Tournament not found: ${tournamentId}`);
+      }
 
       let finalists: (ITournamentPlayer & { id: string })[] = [],
-        nbMatchsPlayed = 0
+        nbMatchsPlayed = 0;
 
       tournament.players.forEach((player, playerId) => {
         if (player.ranks.length > nbMatchsPlayed) {
-          finalists = []
-          nbMatchsPlayed = player.ranks.length
+          finalists = [];
+          nbMatchsPlayed = player.ranks.length;
         }
         if (player.ranks.length === nbMatchsPlayed) {
           finalists.push({
             id: playerId,
             ...player
-          })
+          });
         }
-      })
+      });
 
-      const winner = finalists.find((p) => p.ranks.at(-1) === 1)
+      const winner = finalists.find((p) => p.ranks.at(-1) === 1);
       if (winner) {
-        this.room.presence.publish("tournament-winner", winner)
+        this.room.presence.publish("tournament-winner", winner);
       }
 
       for (const player of finalists) {
-        const mongoUser = await UserMetadata.findOne({ uid: player.id })
-        const user = this.room.users.get(player.id)
-        const rank = player.ranks.at(-1) ?? 1
+        const mongoUser = await UserMetadata.findOne({ uid: player.id });
+        const user = this.room.users.get(player.id);
+        const rank = player.ranks.at(-1) ?? 1;
 
-        if (mongoUser == null || user == null) continue
+        if (mongoUser == null || user == null) continue;
 
-        mongoUser.booster += 3 // 3 boosters for top 8
-        if (mongoUser.titles.includes(Title.ACE_TRAINER) === false) {
-          mongoUser.titles.push(Title.ACE_TRAINER)
-          user.titles.push(Title.ACE_TRAINER)
+        mongoUser.booster += 3; // 3 boosters for top 8
+        if (!mongoUser.titles.includes(Title.ACE_TRAINER)) {
+          mongoUser.titles.push(Title.ACE_TRAINER);
+          user.titles.push(Title.ACE_TRAINER);
         }
 
         if (rank <= 4) {
-          mongoUser.booster += 3 // 6 boosters for top 4
-          if (mongoUser.titles.includes(Title.ELITE_FOUR_MEMBER) === false) {
-            mongoUser.titles.push(Title.ELITE_FOUR_MEMBER)
-            user.titles.push(Title.ELITE_FOUR_MEMBER)
+          mongoUser.booster += 3; // 6 boosters for top 4
+          if (!mongoUser.titles.includes(Title.ELITE_FOUR_MEMBER)) {
+            mongoUser.titles.push(Title.ELITE_FOUR_MEMBER);
+            user.titles.push(Title.ELITE_FOUR_MEMBER);
           }
         }
 
         if (rank === 1) {
-          mongoUser.booster += 4 // 10 boosters for top 1
-          if (mongoUser.titles.includes(Title.CHAMPION) === false) {
-            mongoUser.titles.push(Title.CHAMPION)
-            user.titles.push(Title.CHAMPION)
+          mongoUser.booster += 4; // 10 boosters for top 1
+          if (!mongoUser.titles.includes(Title.CHAMPION)) {
+            mongoUser.titles.push(Title.CHAMPION);
+            user.titles.push(Title.CHAMPION);
           }
         }
 
-        user.booster = mongoUser.booster
-        await mongoUser.save()
+        await mongoUser.save();
       }
 
-      tournament.brackets.clear()
-      tournament.finished = true
-
-      const mongoTournament = await Tournament.findById(tournamentId)
-      if (mongoTournament) {
-        mongoTournament.finished = true
-        mongoTournament.brackets = convertSchemaToRawObject(tournament.brackets)
-        await mongoTournament.save()
-      }
+      this.state.tournaments.delete(tournamentId);
+      this.state.addAnnouncement(`${tournament.name} has ended!`);
     } catch (error) {
-      logger.error(error)
+      logger.error(error);
     }
   }
 }
