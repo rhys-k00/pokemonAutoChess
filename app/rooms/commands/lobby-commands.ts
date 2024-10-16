@@ -1160,6 +1160,15 @@ export class ParticipateInTournamentCommand extends Command<
   }
 }
 
+import { Command } from 'some-command-library'; // Update with your actual import
+import { logger } from 'some-logger-library'; // Update with your actual import
+import { nanoid } from 'nanoid'; // Ensure you have this import if you use nanoid
+import { CustomLobbyRoom } from 'your-room-library'; // Replace with your actual room import
+import { Tournament, TournamentBracketSchema } from 'your-tournament-model'; // Update with your actual model
+import { GameMode, Role } from 'your-enums'; // Replace with your actual enums
+import { makeBrackets, getRemainingPlayers, getTournamentStage, convertSchemaToRawObject } from 'your-helpers'; // Update with your actual imports
+import { EndTournamentCommand } from './EndTournamentCommand'; // Update with your actual import
+
 export class NextTournamentStageCommand extends Command<
   CustomLobbyRoom,
   { tournamentId: string }
@@ -1193,14 +1202,8 @@ export class NextTournamentStageCommand extends Command<
           // Keep top 8 players for the finals based on ranks
           const top8Players = this.getTopRankedPlayers(remainingPlayers, 8);
 
-          // Mark players for the final round
-          top8Players.forEach((p) => (p.eliminated = false));
-          remainingPlayers
-            .filter((p) => !top8Players.includes(p))
-            .forEach((p) => (p.eliminated = true));
-
           // Proceed to the final round with top 8 players
-          return [new CreateTournamentLobbiesCommand().setPayload({ tournamentId })];
+          return [new CreateTournamentLobbiesCommand().setPayload({ tournamentId, players: top8Players })];
         } else {
           // Proceed to the next stage (no elimination for the first 3 rounds)
           return [
@@ -1220,7 +1223,7 @@ export class NextTournamentStageCommand extends Command<
       .sort((a, b) => {
         const sumA = a.ranks.reduce((acc, rank) => acc + rank, 0);
         const sumB = b.ranks.reduce((acc, rank) => acc + rank, 0);
-        return sumB - sumA; // Sort in descending order
+        return sumA - sumB; // Sort in ascending order for better ranks
       })
       .slice(0, count); // Get top 'count' players
   }
@@ -1228,14 +1231,16 @@ export class NextTournamentStageCommand extends Command<
 
 export class CreateTournamentLobbiesCommand extends Command<
   CustomLobbyRoom,
-  { client?: Client; tournamentId: string }
+  { client?: Client; tournamentId: string; players?: TournamentPlayerSchema[] }
 > {
   async execute({
     tournamentId,
-    client
+    client,
+    players = [],
   }: {
-    tournamentId: string
-    client?: Client
+    tournamentId: string;
+    client?: Client;
+    players?: TournamentPlayerSchema[];
   }) {
     try {
       if (client) {
@@ -1274,7 +1279,7 @@ export class CreateTournamentLobbiesCommand extends Command<
           ownerId: null,
           roomName: bracket.name,
           autoStartDelayInSeconds: 10 * 60,
-          whitelist: bracket.playersId,
+          whitelist: players.length > 0 ? players.map(p => p.id) : bracket.playersId, // Use players for finals
           tournamentId,
           bracketId
         });
