@@ -1292,7 +1292,7 @@ export class CreateTournamentLobbiesCommand extends Command<
   }
 }
 
-export class EndTournamentMatchCommand extends Command<
+export class EndTournamentMatchCommand extends Command< 
   CustomLobbyRoom,
   {
     tournamentId: string
@@ -1307,54 +1307,51 @@ export class EndTournamentMatchCommand extends Command<
   }: {
     tournamentId: string
     bracketId: string
-    players: IPlayer[]
+    players: { id: string; rank: number }[]
   }) {
     logger.debug(`Tournament ${tournamentId} bracket ${bracketId} has ended`);
     try {
       const tournament = this.state.tournaments.find(
         (t) => t.id === tournamentId
       );
-      if (!tournament) {
-        return logger.error(`Tournament not found: ${tournamentId}`);
-      }
+      if (!tournament) return logger.error(`Tournament not found: ${tournamentId}`);
 
       const bracket = tournament.brackets.get(bracketId);
-      if (!bracket) {
-        return logger.error(`Tournament bracket not found: ${bracketId}`);
-      }
+      if (!bracket) return logger.error(`Tournament bracket not found: ${bracketId}`);
 
       bracket.finished = true;
 
       players.forEach((p) => {
         const player = tournament.players.get(p.id);
         if (player) {
-          player.ranks.push(p.rank);
-          if (tournament.stage > 3 && p.rank > 4) {
-            // eliminate players whose rank is > 4, but only after 3 rounds
-            player.eliminated = true;
-          }
+          player.ranks.push(p.rank); // Push the rank to the player's ranks
         }
       });
 
+      // Remove the elimination logic
+      // Commented out for clarity
+      /*
       bracket.playersId.forEach((playerId) => {
         const player = tournament.players.get(playerId);
         if (player && players.every((p) => p.id !== playerId)) {
-          // eliminate players who did not attend their bracket, but only after 3 rounds
-          if (tournament.stage > 3) {
-            player.eliminated = true;
-          }
+          // eliminate players who did not attend their bracket
+          player.eliminated = true;
         }
       });
+      */
 
       if (values(tournament.brackets).every((b) => b.finished)) {
-        // Save brackets and player ranks to db before moving to next stage
+        // Save brackets and player ranks to DB before moving to next stage
         const mongoTournament = await Tournament.findById(tournamentId);
         if (mongoTournament) {
           mongoTournament.players = convertSchemaToRawObject(tournament.players);
-          mongoTournament.brackets = convertSchemaToRawObject(
-            tournament.brackets
-          );
-          await mongoTournament.save();
+          mongoTournament.brackets = convertSchemaToRawObject(tournament.brackets);
+          mongoTournament.ranks = tournament.players.map(player => ({
+            id: player.id,
+            ranks: player.ranks,
+          })); // Save the ranks for each player
+
+          await mongoTournament.save(); // Ensure to await the save operation
         }
 
         return [new NextTournamentStageCommand().setPayload({ tournamentId })];
