@@ -1288,7 +1288,7 @@ export class CreateTournamentLobbiesCommand extends Command<
   }
 }
 
-export class EndTournamentMatchCommand extends Command< 
+export class EndTournamentMatchCommand extends Command<  
   CustomLobbyRoom,
   {
     tournamentId: string
@@ -1319,18 +1319,24 @@ export class EndTournamentMatchCommand extends Command<
 
       bracket.finished = true;
 
-      // Update player ranks and ensure they are not eliminated
+      // Update player ranks regardless of their current game state
       players.forEach((p) => {
         const player = tournament.players.get(p.id);
         if (player) {
           player.ranks.push(p.rank); // Push the rank to the player's ranks
-          // Ensure player remains non-eliminated
-          player.eliminated = false; // or leave this line out if you want to keep original logic
+          player.eliminated = p.rank > 4; // Set elimination based on rank
+        } else {
+          logger.warn(`Player ${p.id} not found in tournament state. Updating rank directly.`);
+          // Handle players that are no longer in the state
+          // You can create a new player object or log the absence as needed
+          const newPlayer = { id: p.id, ranks: [p.rank], eliminated: p.rank > 4 };
+          tournament.players.set(p.id, newPlayer);
         }
       });
 
-      if (values(tournament.brackets).every((b) => b.finished)) {
-        // Save brackets and player ranks to DB before moving to next stage
+      // Check if all brackets are finished
+      if (values(tournament.brackets).every(b => b.finished)) {
+        // Save brackets and player ranks to DB before moving to the next stage
         const mongoTournament = await Tournament.findById(tournamentId);
         if (mongoTournament) {
           mongoTournament.players = convertSchemaToRawObject(tournament.players);
