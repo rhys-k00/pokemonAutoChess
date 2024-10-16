@@ -1319,24 +1319,15 @@ export class EndTournamentMatchCommand extends Command<
 
       bracket.finished = true;
 
-      // Update player ranks
+      // Update player ranks and ensure they are not eliminated
       players.forEach((p) => {
         const player = tournament.players.get(p.id);
         if (player) {
           player.ranks.push(p.rank); // Push the rank to the player's ranks
+          // Ensure player remains non-eliminated
+          player.eliminated = false; // or leave this line out if you want to keep original logic
         }
       });
-
-      // Remove the elimination logic for clarity
-      /*
-      bracket.playersId.forEach((playerId) => {
-        const player = tournament.players.get(playerId);
-        if (player && players.every((p) => p.id !== playerId)) {
-          // eliminate players who did not attend their bracket
-          player.eliminated = true;
-        }
-      });
-      */
 
       if (values(tournament.brackets).every((b) => b.finished)) {
         // Save brackets and player ranks to DB before moving to next stage
