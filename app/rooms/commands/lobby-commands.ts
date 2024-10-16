@@ -1307,13 +1307,15 @@ export class EndTournamentMatchCommand extends Command<
   }) {
     logger.debug(`Tournament ${tournamentId} bracket ${bracketId} has ended`);
     try {
-      const tournament = this.state.tournaments.find(
-        (t) => t.id === tournamentId
-      );
-      if (!tournament) return logger.error(`Tournament not found: ${tournamentId}`);
+      const tournament = this.state.tournaments.find(t => t.id === tournamentId);
+      if (!tournament) {
+        return logger.error(`Tournament not found: ${tournamentId}`);
+      }
 
       const bracket = tournament.brackets.get(bracketId);
-      if (!bracket) return logger.error(`Tournament bracket not found: ${bracketId}`);
+      if (!bracket) {
+        return logger.error(`Tournament bracket not found: ${bracketId}`);
+      }
 
       bracket.finished = true;
 
@@ -1324,8 +1326,7 @@ export class EndTournamentMatchCommand extends Command<
         }
       });
 
-      // Remove the elimination logic
-      // Commented out for clarity
+      // Remove the elimination logic for clarity
       /*
       bracket.playersId.forEach((playerId) => {
         const player = tournament.players.get(playerId);
@@ -1342,7 +1343,7 @@ export class EndTournamentMatchCommand extends Command<
         if (mongoTournament) {
           mongoTournament.players = convertSchemaToRawObject(tournament.players);
           mongoTournament.brackets = convertSchemaToRawObject(tournament.brackets);
-          mongoTournament.ranks = tournament.players.map(player => ({
+          mongoTournament.ranks = Array.from(tournament.players.values()).map(player => ({
             id: player.id,
             ranks: player.ranks,
           })); // Save the ranks for each player
@@ -1365,15 +1366,13 @@ export class EndTournamentCommand extends Command<
   async execute({ tournamentId }: { tournamentId: string }) {
     try {
       logger.debug(`Tournament ${tournamentId} is finished`);
-      const tournament = this.state.tournaments.find(
-        (t) => t.id === tournamentId
-      );
+      const tournament = this.state.tournaments.find(t => t.id === tournamentId);
       if (!tournament) {
         return logger.error(`Tournament not found: ${tournamentId}`);
       }
 
-      let finalists: (ITournamentPlayer & { id: string })[] = [],
-        nbMatchsPlayed = 0;
+      let finalists: (ITournamentPlayer & { id: string })[] = [];
+      let nbMatchsPlayed = 0;
 
       tournament.players.forEach((player, playerId) => {
         if (player.ranks.length > nbMatchsPlayed) {
@@ -1398,7 +1397,7 @@ export class EndTournamentCommand extends Command<
         const user = this.room.users.get(player.id);
         const rank = player.ranks.at(-1) ?? 1;
 
-        if (mongoUser == null || user == null) continue;
+        if (!mongoUser || !user) continue;
 
         mongoUser.booster += 3; // 3 boosters for top 8
         if (!mongoUser.titles.includes(Title.ACE_TRAINER)) {
