@@ -32,9 +32,17 @@ export function getTournamentStage(tournament: ITournament): string {
 
 export function makeBrackets(tournament: ITournament): ITournamentBracket[] {
   const remainingPlayers = getRemainingPlayers(tournament)
-  remainingPlayers.sort((a, b) => b.elo - a.elo)
 
-  // find the ideal number of brackets depending on the number of remaining players
+  // Shuffle the remaining players to randomize their positions
+  for (let i = remainingPlayers.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[remainingPlayers[i], remainingPlayers[j]] = [
+      remainingPlayers[j],
+      remainingPlayers[i]
+    ]
+  }
+
+  // Find the ideal number of brackets depending on the number of remaining players
   let minDelta = 8
   let idealNbPerBracket = 8
   for (let nbPerBracket = 5; nbPerBracket <= 8; nbPerBracket++) {
@@ -42,7 +50,7 @@ export function makeBrackets(tournament: ITournament): ITournamentBracket[] {
       Math.round(remainingPlayers.length / nbPerBracket) -
         remainingPlayers.length / nbPerBracket
     )
-    delta += 8 - nbPerBracket // favorizing 8 player lobbies
+    delta += 8 - nbPerBracket // favor 8-player lobbies
     if (delta <= minDelta) {
       minDelta = delta
       idealNbPerBracket = nbPerBracket
@@ -68,12 +76,8 @@ export function makeBrackets(tournament: ITournament): ITournamentBracket[] {
   let b = 0
   while (remainingPlayers.length > 0) {
     const bracket = brackets[b]
-    /* Seeding: The number one ranked plays the lowest ranked, the number two ranked plays the second lowest ranked and so on.*/
-    if (remainingPlayers.length > 0)
-      bracket.playersId.push(remainingPlayers.shift()!.id)
-    if (remainingPlayers.length > nbBrackets - b - 1)
-      // try to balance number of players between brackets
-      bracket.playersId.push(remainingPlayers.pop()!.id)
+    // Randomly assign players to brackets
+    bracket.playersId.push(remainingPlayers.shift()!.id)
     b = (b + 1) % nbBrackets
   }
 
