@@ -54,6 +54,8 @@ import { Language } from "../../types/enum/Language"
 import { Pkm, PkmIndex, Unowns } from "../../types/enum/Pokemon"
 import { StarterAvatars } from "../../types/enum/Starters"
 import { ITournamentPlayer } from "../../types/interfaces/Tournament"
+import { TournamentSchema } from "../schemas/tournament"
+import { TournamentService } from "../services/TournamentService"
 import { sum } from "../../utils/array"
 import { getRank } from "../../utils/elo"
 import { logger } from "../../utils/logger"
@@ -1288,26 +1290,27 @@ export class CreateTournamentLobbiesCommand extends Command<
   }
 }
 
-export class EndTournamentMatchCommand extends Command<  
+export class EndTournamentMatchCommand extends Command<
   CustomLobbyRoom,
   {
-    tournamentId: string
-    bracketId: string
-    players: { id: string; rank: number }[]
+    tournamentId: string;
+    bracketId: string;
+    players: { id: string; rank: number }[];
   }
 > {
   async execute({
     tournamentId,
     bracketId,
-    players
+    players,
   }: {
-    tournamentId: string
-    bracketId: string
-    players: { id: string; rank: number }[]
+    tournamentId: string;
+    bracketId: string;
+    players: { id: string; rank: number }[];
   }) {
     logger.debug(`Tournament ${tournamentId} bracket ${bracketId} has ended`);
+
     try {
-      const tournament = this.state.tournaments.find(t => t.id === tournamentId);
+      const tournament = this.state.tournaments.find((t) => t.id === tournamentId);
       if (!tournament) {
         logger.error(`Tournament not found: ${tournamentId}`);
         return;
@@ -1326,33 +1329,33 @@ export class EndTournamentMatchCommand extends Command<
         const player = tournament.players.get(p.id);
         if (player) {
           logger.debug(`Pushing rank ${p.rank} for player ${p.id}`);
-          
-          // Initialize the ranks array if not present
+
+          // Initialize ranks array if not present
           if (!player.ranks) {
             player.ranks = [];
           }
 
-          player.ranks.push(p.rank); // Push the rank to the player's ranks
+          player.ranks.push(p.rank); // Push rank to player's ranks
           logger.debug(`Updated ranks for player ${p.id}: ${player.ranks}`);
 
-          // Eliminate players based on rank
+          // Eliminate players based on rank (if > 4, they are eliminated)
           player.eliminated = p.rank > 4;
         } else {
           logger.warn(`Player ${p.id} not found in tournament state.`);
         }
       });
 
-      // Save players and brackets data to the database
-      const mongoTournament = await Tournament.findById(tournamentId);
+      // Save the updated tournament data to the database
+      const mongoTournament = await TournamentService.getTournamentById(tournamentId);
       if (mongoTournament) {
-        // Convert the players and brackets to the format suitable for MongoDB
+        // Convert Colyseus schema to MongoDB compatible plain object
         mongoTournament.players = new Map(
           Array.from(tournament.players.entries()).map(([key, player]) => [
             key,
             {
               id: player.id,
               name: player.name,
-              ranks: [...player.ranks || []], // Ensure ranks is converted to a regular array
+              ranks: [...player.ranks || []], // Ensure ranks is converted to an array
               eliminated: player.eliminated,
             },
           ])
@@ -1363,13 +1366,14 @@ export class EndTournamentMatchCommand extends Command<
         // Log before saving to the database
         logger.debug(`Saving tournament data to DB: ${JSON.stringify(mongoTournament)}`);
 
-        await mongoTournament.save(); // Ensure to await the save operation
+        await TournamentService.saveTournament(mongoTournament); // Save the changes
         logger.debug(`Tournament data saved successfully.`);
       } else {
         logger.error(`Mongo tournament not found: ${tournamentId}`);
       }
 
-      if (values(tournament.brackets).every((b) => b.finished)) {
+      // Check if all brackets are finished, and if so, advance to the next stage
+      if (Array.from(tournament.brackets.values()).every((b) => b.finished)) {
         return [new NextTournamentStageCommand().setPayload({ tournamentId })];
       }
     } catch (error) {
