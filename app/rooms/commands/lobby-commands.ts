@@ -1309,53 +1309,70 @@ export class EndTournamentMatchCommand extends Command<
     try {
       const tournament = this.state.tournaments.find(t => t.id === tournamentId);
       if (!tournament) {
-        return logger.error(`Tournament not found: ${tournamentId}`);
+        logger.error(`Tournament not found: ${tournamentId}`);
+        return;
       }
 
       const bracket = tournament.brackets.get(bracketId);
       if (!bracket) {
-        return logger.error(`Tournament bracket not found: ${bracketId}`);
+        logger.error(`Tournament bracket not found: ${bracketId}`);
+        return;
       }
 
       bracket.finished = true;
 
-      // Update player ranks regardless of their current game state
+      // Update player ranks
       players.forEach((p) => {
         const player = tournament.players.get(p.id);
         if (player) {
+          logger.debug(`Pushing rank ${p.rank} for player ${p.id}`);
+          
+          // Initialize the ranks array if not present
+          if (!player.ranks) {
+            player.ranks = [];
+          }
+
           player.ranks.push(p.rank); // Push the rank to the player's ranks
-          player.eliminated = p.rank > 4; // Set elimination based on rank
+          logger.debug(`Updated ranks for player ${p.id}: ${player.ranks}`);
+
+          // Eliminate players based on rank
+          player.eliminated = p.rank > 4;
         } else {
-          logger.warn(`Player ${p.id} not found in tournament state. Updating rank directly.`);
-          // Handle players that are no longer in the state
-          // You can create a new player object or log the absence as needed
-          const newPlayer = { id: p.id, ranks: [p.rank], eliminated: p.rank > 4 };
-          tournament.players.set(p.id, newPlayer);
+          logger.warn(`Player ${p.id} not found in tournament state.`);
         }
       });
 
-      // Check if all brackets are finished
-      if (values(tournament.brackets).every(b => b.finished)) {
-        // Save brackets and player ranks to DB before moving to the next stage
-        const mongoTournament = await Tournament.findById(tournamentId);
-        if (mongoTournament) {
-          mongoTournament.players = convertSchemaToRawObject(tournament.players);
-          mongoTournament.brackets = convertSchemaToRawObject(tournament.brackets);
-          mongoTournament.ranks = Array.from(tournament.players.values()).map(player => ({
-            id: player.id,
-            ranks: player.ranks,
-          })); // Save the ranks for each player
+      // Save players and brackets data to the database
+      const mongoTournament = await Tournament.findById(tournamentId);
+      if (mongoTournament) {
+        // Convert the players and brackets to the format suitable for MongoDB
+        mongoTournament.players = Array.from(tournament.players.values()).map(player => ({
+          id: player.id,
+          name: player.name,
+          ranks: player.ranks || [], // Ensure ranks is always an array
+          eliminated: player.eliminated
+        }));
 
-          await mongoTournament.save(); // Ensure to await the save operation
-        }
+        mongoTournament.brackets = convertSchemaToRawObject(tournament.brackets);
 
+        // Log before saving to the database
+        logger.debug(`Saving tournament data to DB: ${JSON.stringify(mongoTournament)}`);
+
+        await mongoTournament.save(); // Ensure to await the save operation
+        logger.debug(`Tournament data saved successfully.`);
+      } else {
+        logger.error(`Mongo tournament not found: ${tournamentId}`);
+      }
+
+      if (values(tournament.brackets).every((b) => b.finished)) {
         return [new NextTournamentStageCommand().setPayload({ tournamentId })];
       }
     } catch (error) {
-      logger.error(error);
+      logger.error(`Error in EndTournamentMatchCommand: ${error.message}`);
     }
   }
 }
+
 
 export class EndTournamentCommand extends Command<
   CustomLobbyRoom,
