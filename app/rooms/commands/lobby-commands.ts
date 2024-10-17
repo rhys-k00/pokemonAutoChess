@@ -1,3 +1,4 @@
+
 import { Command } from "@colyseus/command"
 import { Client, matchMaker } from "colyseus"
 import { nanoid } from "nanoid"
@@ -54,8 +55,6 @@ import { Language } from "../../types/enum/Language"
 import { Pkm, PkmIndex, Unowns } from "../../types/enum/Pokemon"
 import { StarterAvatars } from "../../types/enum/Starters"
 import { ITournamentPlayer } from "../../types/interfaces/Tournament"
-import { TournamentSchema } from "../schemas/tournament"
-import TournamentService from '../../services/TournamentService'
 import { sum } from "../../utils/array"
 import { getRank } from "../../utils/elo"
 import { logger } from "../../utils/logger"
@@ -1290,94 +1289,71 @@ export class CreateTournamentLobbiesCommand extends Command<
   }
 }
 
-export class EndTournamentMatchCommand extends Command<
+export class EndTournamentMatchCommand extends Command<  
   CustomLobbyRoom,
   {
-    tournamentId: string;
-    bracketId: string;
-    players: { id: string; rank: number }[];
+    tournamentId: string
+    bracketId: string
+    players: { id: string; rank: number }[]
   }
 > {
   async execute({
     tournamentId,
     bracketId,
-    players,
+    players
   }: {
-    tournamentId: string;
-    bracketId: string;
-    players: { id: string; rank: number }[];
+    tournamentId: string
+    bracketId: string
+    players: { id: string; rank: number }[]
   }) {
     logger.debug(`Tournament ${tournamentId} bracket ${bracketId} has ended`);
-
     try {
-      const tournament = this.state.tournaments.find((t) => t.id === tournamentId);
+      const tournament = this.state.tournaments.find(t => t.id === tournamentId);
       if (!tournament) {
-        logger.error(`Tournament not found: ${tournamentId}`);
-        return;
+        return logger.error(`Tournament not found: ${tournamentId}`);
       }
 
       const bracket = tournament.brackets.get(bracketId);
       if (!bracket) {
-        logger.error(`Tournament bracket not found: ${bracketId}`);
-        return;
+        return logger.error(`Tournament bracket not found: ${bracketId}`);
       }
 
       bracket.finished = true;
 
-      // Update player ranks
+      // Update player ranks regardless of their current game state
       players.forEach((p) => {
         const player = tournament.players.get(p.id);
         if (player) {
-          logger.debug(`Pushing rank ${p.rank} for player ${p.id}`);
-
-          // Initialize ranks array if not present
-          if (!player.ranks) {
-            player.ranks = [];
-          }
-
-          player.ranks.push(p.rank); // Push rank to player's ranks
-          logger.debug(`Updated ranks for player ${p.id}: ${player.ranks}`);
-
-          // Eliminate players based on rank (if > 4, they are eliminated)
-          player.eliminated = p.rank > 4;
+          player.ranks.push(p.rank); // Push the rank to the player's ranks
+          player.eliminated = p.rank > 4; // Set elimination based on rank
         } else {
-          logger.warn(`Player ${p.id} not found in tournament state.`);
+          logger.warn(`Player ${p.id} not found in tournament state. Updating rank directly.`);
+          // Handle players that are no longer in the state
+          // You can create a new player object or log the absence as needed
+          const newPlayer = { id: p.id, ranks: [p.rank], eliminated: p.rank > 4 };
+          tournament.players.set(p.id, newPlayer);
         }
       });
 
-      // Save the updated tournament data to the database
-      const mongoTournament = await TournamentService.getTournamentById(tournamentId);
-      if (mongoTournament) {
-        // Convert Colyseus schema to MongoDB compatible plain object
-        mongoTournament.players = new Map(
-          Array.from(tournament.players.entries()).map(([key, player]) => [
-            key,
-            {
-              id: player.id,
-              name: player.name,
-              ranks: [...player.ranks || []], // Ensure ranks is converted to an array
-              eliminated: player.eliminated,
-            },
-          ])
-        );
+      // Check if all brackets are finished
+      if (values(tournament.brackets).every(b => b.finished)) {
+        // Save brackets and player ranks to DB before moving to the next stage
+        const mongoTournament = await Tournament.findById(tournamentId);
+        if (mongoTournament) {
+          mongoTournament.players = convertSchemaToRawObject(tournament.players);
+          mongoTournament.brackets = convertSchemaToRawObject(tournament.brackets);
+          mongoTournament.ranks = Array.from(tournament.players.values()).map(player => ({
+            id: player.id,
+            ranks: player.ranks,
+          })); // Save the ranks for each player
 
-        mongoTournament.brackets = convertSchemaToRawObject(tournament.brackets);
+          await mongoTournament.save(); // Ensure to await the save operation
+        }
 
-        // Log before saving to the database
-        logger.debug(`Saving tournament data to DB: ${JSON.stringify(mongoTournament)}`);
-
-        await TournamentService.saveTournament(mongoTournament); // Save the changes
-        logger.debug(`Tournament data saved successfully.`);
-      } else {
-        logger.error(`Mongo tournament not found: ${tournamentId}`);
-      }
-
-      // Check if all brackets are finished, and if so, advance to the next stage
-      if (Array.from(tournament.brackets.values()).every((b) => b.finished)) {
         return [new NextTournamentStageCommand().setPayload({ tournamentId })];
       }
     } catch (error) {
-      logger.error(`Error in EndTournamentMatchCommand: ${error.message}`);
+      logger.error(error);
     }
   }
 }
