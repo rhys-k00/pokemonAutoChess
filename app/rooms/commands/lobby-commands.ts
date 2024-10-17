@@ -1349,7 +1349,7 @@ export class EndTournamentMatchCommand extends Command<
         mongoTournament.players = Array.from(tournament.players.values()).map(player => ({
           id: player.id,
           name: player.name,
-          ranks: player.ranks || [], // Ensure ranks is always an array
+          ranks: [...player.ranks || []], // Ensure ranks is converted to a regular array
           eliminated: player.eliminated
         }));
 
@@ -1372,7 +1372,6 @@ export class EndTournamentMatchCommand extends Command<
     }
   }
 }
-
 
 export class EndTournamentCommand extends Command<
   CustomLobbyRoom,
