@@ -1,38 +1,35 @@
-import { Schema, model } from "mongoose"
-import { ITournament } from "../../types/interfaces/Tournament"
+import { Schema, model } from "mongoose";
+import { ITournament } from "../../types/interfaces/Tournament";
 
 const tournamentPlayerSchema = new Schema({
-  name: String,
-  avatar: String,
-  elo: Number,
-  ranks: [Number],
-  eliminated: Boolean
-})
+  name: { type: String, required: true },
+  avatar: { type: String, required: true },
+  elo: { type: Number, required: true, default: 1000 }, // Setting a default value for elo
+  ranks: { type: [Number], default: [] }, // Default to an empty array
+  eliminated: { type: Boolean, default: false }, // Default to false
+});
 
 const tournamentBracketSchema = new Schema({
-  name: String,
-  playersId: [String],
-  finished: Boolean
-})
+  name: { type: String, required: true },
+  playersId: { type: [String], required: true },
+  finished: { type: Boolean, default: false }, // Default to false
+});
 
-const tournamentSchema = new Schema({
-  name: String,
-  startDate: String,
+const tournamentSchema = new Schema<ITournament>({
+  name: { type: String, required: true },
+  startDate: { type: String, required: true }, // Ensure date is a string format (consider using Date type)
   players: {
     type: Map,
-    of: tournamentPlayerSchema
+    of: tournamentPlayerSchema,
   },
   brackets: {
     type: Map,
-    of: tournamentBracketSchema
+    of: tournamentBracketSchema,
   },
-  stage: { // New field to track the round number
-    type: Number,
-    default: 0
-  },
-  finished: Boolean
-})
+  finished: { type: Boolean, default: false }, // Default to false
+});
 
-export const Tournament = model<ITournament>("Tournament", tournamentSchema)
+// Create the Tournament model
+export const Tournament = model<ITournament>("Tournament", tournamentSchema);
 
-export default Tournament
+export default Tournament;
