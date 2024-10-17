@@ -6,18 +6,6 @@ import {
 } from "../../types/interfaces/Tournament"
 import { resetArraySchema } from "../../utils/schemas"
 
-// Utility function to convert ArraySchema to a regular array
-function arraySchemaToArray(arrSchema: ArraySchema<number>): number[] {
-  return [...arrSchema];
-}
-
-// Utility function to convert a regular array to ArraySchema
-function arrayToSchemaArray(arr: number[]): ArraySchema<number> {
-  const arraySchema = new ArraySchema<number>();
-  arr.forEach(value => arraySchema.push(value));
-  return arraySchema;
-}
-
 export class TournamentPlayerSchema
   extends Schema
   implements ITournamentPlayer
@@ -41,28 +29,6 @@ export class TournamentPlayerSchema
     this.elo = elo
     resetArraySchema(this.ranks, ranks)
     this.eliminated = eliminated
-  }
-
-  // Convert player data to a plain object for MongoDB saving
-  toPlainObject() {
-    return {
-      name: this.name,
-      avatar: this.avatar,
-      elo: this.elo,
-      ranks: arraySchemaToArray(this.ranks),  // Convert ranks for MongoDB
-      eliminated: this.eliminated
-    };
-  }
-
-  // Load player data from plain object (MongoDB) into ArraySchema for Colyseus
-  static fromPlainObject(data: any) {
-    return new TournamentPlayerSchema(
-      data.name,
-      data.avatar,
-      data.elo,
-      arrayToSchemaArray(data.ranks),  // Convert ranks back to ArraySchema
-      data.eliminated
-    );
   }
 }
 
@@ -133,39 +99,5 @@ export class TournamentSchema extends Schema implements ITournament {
         )
       })
     }
-  }
-
-  // Convert tournament data to a plain object for MongoDB saving
-  toPlainObject() {
-    return {
-      id: this.id,
-      name: this.name,
-      startDate: this.startDate,
-      finished: this.finished,
-      players: Array.from(this.players.entries()).reduce((acc, [id, player]) => {
-        acc[id] = player.toPlainObject();
-        return acc;
-      }, {}),
-      brackets: convertSchemaToRawObject(this.brackets) // Ensure this works with MongoDB
-    };
-  }
-
-  // Load tournament data from MongoDB
-  static fromPlainObject(data: any) {
-    const players = new Map<string, TournamentPlayerSchema>();
-    Object.keys(data.players).forEach((key) => {
-      players.set(key, TournamentPlayerSchema.fromPlainObject(data.players[key]));
-    });
-
-    const brackets = convertRawObjectToSchema(data.brackets);
-
-    return new TournamentSchema(
-      data.id,
-      data.name,
-      data.startDate,
-      players,
-      brackets,
-      data.finished
-    );
   }
 }
