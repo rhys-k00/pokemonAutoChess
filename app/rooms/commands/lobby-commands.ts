@@ -55,7 +55,7 @@ import { Pkm, PkmIndex, Unowns } from "../../types/enum/Pokemon"
 import { StarterAvatars } from "../../types/enum/Starters"
 import { ITournamentPlayer } from "../../types/interfaces/Tournament"
 import { TournamentSchema } from "../schemas/tournament"
-import { TournamentService } from "../services/TournamentService"
+import TournamentService from '../../services/TournamentService'
 import { sum } from "../../utils/array"
 import { getRank } from "../../utils/elo"
 import { logger } from "../../utils/logger"
