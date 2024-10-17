@@ -1346,12 +1346,17 @@ export class EndTournamentMatchCommand extends Command<
       const mongoTournament = await Tournament.findById(tournamentId);
       if (mongoTournament) {
         // Convert the players and brackets to the format suitable for MongoDB
-        mongoTournament.players = Array.from(tournament.players.values()).map(player => ({
-          id: player.id,
-          name: player.name,
-          ranks: [...player.ranks || []], // Ensure ranks is converted to a regular array
-          eliminated: player.eliminated
-        }));
+        mongoTournament.players = new Map(
+          Array.from(tournament.players.entries()).map(([key, player]) => [
+            key,
+            {
+              id: player.id,
+              name: player.name,
+              ranks: [...player.ranks || []], // Ensure ranks is converted to a regular array
+              eliminated: player.eliminated,
+            },
+          ])
+        );
 
         mongoTournament.brackets = convertSchemaToRawObject(tournament.brackets);
 
