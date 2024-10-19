@@ -61,6 +61,7 @@ export class TournamentSchema extends Schema implements ITournament {
   @type({ map: TournamentBracketSchema }) brackets =
     new MapSchema<TournamentBracketSchema>()
   @type("boolean") finished: boolean
+  @type("number") stage: number
 
   constructor(
     id: string,
@@ -69,12 +70,14 @@ export class TournamentSchema extends Schema implements ITournament {
     players: Map<string, ITournamentPlayer>,
     brackets: Map<string, ITournamentBracket>,
     finished: boolean = false,
+    stage: number = 0
   ) {
     super()
     this.id = id
     this.name = name
     this.startDate = startDate
     this.finished = finished
+    this.stage = stage
 
     if (players && players.size) {
       players.forEach((p, key) => {

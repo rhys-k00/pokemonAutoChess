@@ -8,7 +8,6 @@ import {
   getTournamentStage,
   makeBrackets
 } from "../../core/tournament-logic"
-import PokemonConfig from "../../models/colyseus-models/pokemon-config"
 import {
   TournamentBracketSchema,
   TournamentPlayerSchema
@@ -32,9 +31,7 @@ import { discordService } from "../../services/discord"
 import { pastebinService } from "../../services/pastebin"
 import {
   CDN_PORTRAIT_URL,
-  Emotion,
-  IPlayer,
-  ISuggestionUser,
+  Emotion, ISuggestionUser,
   PkmWithConfig,
   Role,
   Title,
@@ -1208,7 +1205,7 @@ export class NextTournamentStageCommand extends Command<
     }
   }
 
-  private getTopRankedPlayers(remainingPlayers: TournamentPlayerSchema[], count: number) {
+  private getTopRankedPlayers(remainingPlayers: (ITournamentPlayer & {id: string})[], count: number) {
     // Sort players based on their ranks and get the top 'count' players
     return remainingPlayers
       .filter(p => p.ranks.length > 0) // Ensure players have ranks
@@ -1223,7 +1220,7 @@ export class NextTournamentStageCommand extends Command<
 
 export class CreateTournamentLobbiesCommand extends Command<
   CustomLobbyRoom,
-  { client?: Client; tournamentId: string; players?: TournamentPlayerSchema[] }
+  { client?: Client; tournamentId: string; players?: (ITournamentPlayer & {id: string})[] }
 > {
   async execute({
     tournamentId,
@@ -1232,7 +1229,7 @@ export class CreateTournamentLobbiesCommand extends Command<
   }: {
     tournamentId: string;
     client?: Client;
-    players?: TournamentPlayerSchema[];
+    players?: (ITournamentPlayer & {id: string})[];
   }) {
     try {
       if (client) {
@@ -1330,7 +1327,7 @@ export class EndTournamentMatchCommand extends Command<
           logger.warn(`Player ${p.id} not found in tournament state. Updating rank directly.`);
           // Handle players that are no longer in the state
           // You can create a new player object or log the absence as needed
-          const newPlayer = { id: p.id, ranks: [p.rank], eliminated: p.rank > 4 };
+          const newPlayer = new TournamentPlayerSchema('', '', 0, [p.rank], p.rank > 4);
           tournament.players.set(p.id, newPlayer);
         }
       });
@@ -1342,10 +1339,6 @@ export class EndTournamentMatchCommand extends Command<
         if (mongoTournament) {
           mongoTournament.players = convertSchemaToRawObject(tournament.players);
           mongoTournament.brackets = convertSchemaToRawObject(tournament.brackets);
-          mongoTournament.ranks = Array.from(tournament.players.values()).map(player => ({
-            id: player.id,
-            ranks: player.ranks,
-          })); // Save the ranks for each player
 
           await mongoTournament.save(); // Ensure to await the save operation
         }
@@ -1423,7 +1416,7 @@ export class EndTournamentCommand extends Command<
         await mongoUser.save();
       }
 
-      this.state.tournaments.delete(tournamentId);
+      this.state.removeTournament(tournamentId);
       this.state.addAnnouncement(`${tournament.name} has ended!`);
     } catch (error) {
       logger.error(error);
